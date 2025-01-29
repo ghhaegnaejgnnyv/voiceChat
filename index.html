@@ -3,138 +3,184 @@
 <head>
     <title>P2P Voice Chat</title>
     <style>
-        #userId { position: absolute; top: 10px; right: 10px; }
-        .container { padding: 20px; }
-        .hidden { display: none; }
-        .indicator { width: 20px; height: 20px; border-radius: 50%; }
-        .speaking { background: green; }
-        .muted { background: red; }
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; }
+        #myId { padding: 5px; margin-bottom: 10px; width: 200px; }
+        .container { margin: 20px 0; padding: 10px; border: 1px solid #ccc; }
+        .call-controls { display: none; margin-top: 10px; }
+        .volume-bar { width: 100px; height: 20px; background: #ddd; margin: 10px 0; }
+        .volume-fill { height: 100%; background: #4CAF50; width: 0%; }
+        button { padding: 8px 15px; margin: 5px; cursor: pointer; }
+        .notification { background: #f0f0f0; padding: 10px; margin: 10px 0; }
     </style>
 </head>
 <body>
-    <div id="userId">Your ID: <span id="myId"></span></div>
-    
-    <div class="container" id="connectScreen">
-        <input type="text" id="peerId" placeholder="Enter friend's ID">
-        <button onclick="connect()">Connect</button>
+    <div>
+        <input type="text" id="nickname" placeholder="Your nickname">
+        <div>Your ID: <span id="myId"></span></div>
     </div>
 
-    <div class="container hidden" id="chatScreen">
-        <div class="indicator" id="myIndicator"></div>
-        <div class="indicator" id="peerIndicator"></div>
-        <br>
-        <button id="muteBtn" onclick="toggleMute()">Mute</button>
-        <input type="range" id="volume" min="0" max="1" step="0.1" onchange="setVolume(this.value)">
-        <button onclick="hangUp()">Disconnect</button>
+    <div class="container">
+        <input type="text" id="friendId" placeholder="Friend's ID">
+        <button onclick="startCall()">Connect</button>
     </div>
 
+    <div id="incomingCall" class="notification" style="display: none;">
+        Incoming call from: <span id="callerNickname"></span>
+        <button onclick="acceptCall()">Accept</button>
+        <button onclick="rejectCall()">Reject</button>
+    </div>
+
+    <div class="call-controls" id="callControls">
+        <div>Connected with: <span id="connectedNickname"></span></div>
+        <div class="volume-bar">
+            <div class="volume-fill" id="volume"></div>
+        </div>
+        <button id="muteButton" onclick="toggleMute()">Mute</button>
+        <button onclick="endCall()">End Call</button>
+    </div>
+
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
     <script>
+        let peer;
+        let currentCall;
         let localStream;
-        let peerConnection;
         let isMuted = false;
-        const myId = Math.random().toString(36).substr(2, 9);
-        document.getElementById('myId').textContent = myId;
+        let audioContext;
+        let analyser;
+        let myNickname = 'User';
 
-        // Симуляция сигнального сервера (в реальности нужен WebSocket)
-        const fakeSignaling = {
-            sendOffer: async (to, offer) => {
-                if(confirm(`User ${to} wants to connect. Accept?`)) {
-                    const answer = await createAnswer(offer);
-                    fakeSignaling.sendAnswer(myId, answer);
-                }
-            },
-            sendAnswer: (to, answer) => {
-                peerConnection.setRemoteDescription(answer);
-            }
-        };
+        // Инициализация Peer
+        function initializePeer() {
+            peer = new Peer({
+                host: '0.peerjs.com',
+                port: 443,
+                secure: true,
+                debug: 3
+            });
 
-        async function connect() {
-            const peerId = document.getElementById('peerId').value;
+            peer.on('open', id => {
+                document.getElementById('myId').textContent = id;
+            });
+
+            peer.on('call', async incomingCall => {
+                const callerNickname = incomingCall.metadata.nickname;
+                document.getElementById('callerNickname').textContent = callerNickname;
+                document.getElementById('incomingCall').style.display = 'block';
+                currentCall = incomingCall;
+            });
+
+            // Обработка отключения
+            peer.on('disconnected', () => {
+                endCall();
+                alert('Connection lost');
+            });
+        }
+
+        // Начать звонок
+        async function startCall() {
+            const friendId = document.getElementById('friendId').value;
+            if (!friendId) return alert('Enter friend ID');
             
-            // Запрос доступа к микрофону
-            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            
-            // Создание PeerConnection
-            peerConnection = new RTCPeerConnection();
-            localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-            
-            // Обработчики событий
-            peerConnection.ontrack = ({ streams: [remoteStream] }) => {
-                const remoteAudio = new Audio();
-                remoteAudio.srcObject = remoteStream;
-                remoteAudio.play();
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                setupVolumeMeter();
                 
-                // Анализ громкости
-                setInterval(() => analyzeVolume(remoteAudio, 'peerIndicator'), 100);
-            };
-
-            // Создание офера
-            const offer = await peerConnection.createOffer();
-            await peerConnection.setLocalDescription(offer);
-            
-            // "Отправка" офера (симуляция)
-            fakeSignaling.sendOffer(peerId, offer);
-            
-            // Переключение экранов
-            document.getElementById('connectScreen').classList.add('hidden');
-            document.getElementById('chatScreen').classList.remove('hidden');
-            
-            // Анализ своей громкости
-            const localAudio = new Audio();
-            localAudio.srcObject = localStream;
-            setInterval(() => analyzeVolume(localAudio, 'myIndicator'), 100);
+                currentCall = peer.call(friendId, localStream, {
+                    metadata: { nickname: myNickname }
+                });
+                
+                currentCall.on('stream', remoteStream => handleRemoteStream(remoteStream));
+                currentCall.on('close', endCall);
+                
+                showCallControls();
+            } catch (err) {
+                console.error('Error starting call:', err);
+            }
         }
 
-        async function createAnswer(offer) {
-            const peerConnection = new RTCPeerConnection();
-            await peerConnection.setRemoteDescription(offer);
-            
-            const answer = await peerConnection.createAnswer();
-            await peerConnection.setLocalDescription(answer);
-            
-            return answer;
+        // Принять звонок
+        async function acceptCall() {
+            document.getElementById('incomingCall').style.display = 'none';
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                setupVolumeMeter();
+                currentCall.answer(localStream);
+                
+                currentCall.on('stream', remoteStream => handleRemoteStream(remoteStream));
+                showCallControls(currentCall.metadata.nickname);
+            } catch (err) {
+                console.error('Error accepting call:', err);
+            }
         }
 
+        // Обработка удаленного аудио
+        function handleRemoteStream(remoteStream) {
+            const remoteAudio = new Audio();
+            remoteAudio.srcObject = remoteStream;
+            remoteAudio.play();
+        }
+
+        // Показать элементы управления звонком
+        function showCallControls(nickname) {
+            document.getElementById('callControls').style.display = 'block';
+            document.getElementById('connectedNickname').textContent = nickname || currentCall.metadata.nickname;
+        }
+
+        // Завершить звонок
+        function endCall() {
+            if (currentCall) currentCall.close();
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
+            document.getElementById('callControls').style.display = 'none';
+            document.getElementById('incomingCall').style.display = 'none';
+            resetVolumeMeter();
+        }
+
+        // Отклонить звонок
+        function rejectCall() {
+            endCall();
+            document.getElementById('incomingCall').style.display = 'none';
+        }
+
+        // Управление микрофоном
         function toggleMute() {
             isMuted = !isMuted;
-            localStream.getAudioTracks().forEach(track => track.enabled = !isMuted);
-            document.getElementById('muteBtn').textContent = isMuted ? 'Unmute' : 'Mute';
+            localStream.getAudioTracks()[0].enabled = !isMuted;
+            document.getElementById('muteButton').textContent = isMuted ? 'Unmute' : 'Mute';
         }
 
-        function setVolume(volume) {
-            document.querySelector('audio').volume = volume;
-        }
+        // Индикатор громкости
+        function setupVolumeMeter() {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioContext.createAnalyser();
+            const source = audioContext.createMediaStreamSource(localStream);
+            source.connect(analyser);
+            analyser.fftSize = 32;
 
-        function analyzeVolume(audio, indicatorId) {
-            const analyser = new AudioAnalyser(audio);
-            const volume = analyser.getVolume();
-            document.getElementById(indicatorId).style.backgroundColor = volume > 0.1 ? 'green' : 'red';
-        }
-
-        function hangUp() {
-            peerConnection.close();
-            window.location.reload();
-        }
-
-        // Вспомогательный класс для анализа звука
-        class AudioAnalyser {
-            constructor(audio) {
-                const context = new AudioContext();
-                const source = context.createMediaStreamSource(audio.srcObject);
-                const analyser = context.createAnalyser();
-                
-                source.connect(analyser);
-                analyser.fftSize = 32;
-                
-                this.data = new Uint8Array(analyser.frequencyBinCount);
-                this.analyser = analyser;
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            
+            function updateVolume() {
+                analyser.getByteFrequencyData(dataArray);
+                const volume = Math.max(...dataArray);
+                document.getElementById('volume').style.width = volume + '%';
+                requestAnimationFrame(updateVolume);
             }
-
-            getVolume() {
-                this.analyser.getByteFrequencyData(this.data);
-                return Math.max(...this.data) / 255;
-            }
+            updateVolume();
         }
+
+        function resetVolumeMeter() {
+            if (audioContext) audioContext.close();
+            document.getElementById('volume').style.width = '0%';
+        }
+
+        // Обработка ника
+        document.getElementById('nickname').addEventListener('input', function(e) {
+            myNickname = e.target.value || 'User';
+        });
+
+        // Инициализация при загрузке
+        window.onload = initializePeer;
     </script>
 </body>
 </html>
