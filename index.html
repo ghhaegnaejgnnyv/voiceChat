@@ -4,23 +4,25 @@
     <title>Анонимный Войсчат</title>
     <style>
         body {
-            font-family: 'Courier New', monospace;
-            background: #000;
-            color: #0f0;
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #1a1a1a, #000);
+            color: #fff;
             margin: 0;
             padding: 20px;
             display: flex;
             justify-content: center;
+            align-items: center;
             min-height: 100vh;
             overflow: hidden;
         }
 
         .container {
-            background: #111;
+            background: rgba(255, 255, 255, 0.1);
             padding: 25px;
             border-radius: 15px;
-            border: 1px solid #0f0;
-            box-shadow: 0 0 10px #0f0;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
             width: 100%;
             max-width: 500px;
             transition: 0.3s;
@@ -32,27 +34,29 @@
             text-align: center;
             font-size: 2em;
             margin-bottom: 20px;
-            text-shadow: 0 0 5px #0f0;
+            color: #0f0;
+            text-shadow: 0 0 10px #0f0;
         }
 
         .status-box {
-            background: #222;
+            background: rgba(0, 0, 0, 0.5);
             padding: 15px;
             border-radius: 10px;
             margin-bottom: 20px;
-            border: 1px solid #0f0;
+            border: 1px solid rgba(0, 255, 0, 0.3);
         }
 
         input, button, select {
             padding: 10px;
             margin: 5px 0;
-            border: 1px solid #0f0;
+            border: 1px solid rgba(0, 255, 0, 0.3);
             border-radius: 8px;
             width: 100%;
             box-sizing: border-box;
-            background: #111;
+            background: rgba(0, 0, 0, 0.5);
             color: #0f0;
-            font-family: 'Courier New', monospace;
+            font-family: 'Arial', sans-serif;
+            transition: 0.3s;
         }
 
         button {
@@ -65,6 +69,7 @@
 
         button:hover {
             background: #0c0;
+            transform: scale(1.05);
         }
 
         .call-controls {
@@ -80,21 +85,21 @@
         }
 
         .volume-box {
-            background: #222;
+            background: rgba(0, 0, 0, 0.5);
             padding: 15px;
             border-radius: 10px;
             text-align: center;
-            border: 1px solid #0f0;
+            border: 1px solid rgba(0, 255, 0, 0.3);
         }
 
         .volume-bar {
             width: 100%;
             height: 20px;
-            background: #111;
+            background: rgba(0, 0, 0, 0.5);
             border-radius: 10px;
             overflow: hidden;
             margin: 10px 0;
-            border: 1px solid #0f0;
+            border: 1px solid rgba(0, 255, 0, 0.3);
         }
 
         .volume-fill {
@@ -105,12 +110,12 @@
         }
 
         .notification {
-            background: #222;
+            background: rgba(0, 0, 0, 0.5);
             padding: 15px;
             border-radius: 10px;
             margin: 15px 0;
             display: none;
-            border: 1px solid #0f0;
+            border: 1px solid rgba(0, 255, 0, 0.3);
         }
 
         .user-status {
@@ -120,7 +125,7 @@
         }
 
         .active-call {
-            background: #1a1a1a;
+            background: rgba(0, 0, 0, 0.7);
         }
 
         .ping-status {
@@ -133,7 +138,6 @@
             margin: 10px 0;
         }
 
-        /* Контейнер для смайликов */
         #smileyContainer {
             position: fixed;
             top: 0;
@@ -151,6 +155,21 @@
             pointer-events: none;
             opacity: 0.7;
             transition: transform 0.2s, opacity 0.2s;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 15px;
+                max-width: 90%;
+            }
+            .call-controls {
+                flex-direction: column;
+                gap: 10px;
+            }
+            button {
+                width: 100%;
+                margin: 5px 0;
+            }
         }
     </style>
 </head>
@@ -201,7 +220,6 @@
         </div>
     </div>
 
-    <!-- Контейнер для смайликов -->
     <div id="smileyContainer"></div>
 
     <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
@@ -217,7 +235,6 @@
         let pingInterval;
         let gainNode;
 
-        // Инициализация Peer
         function initializePeer() {
             peer = new Peer({
                 host: '0.peerjs.com',
@@ -246,7 +263,6 @@
             peer.on('error', err => console.error('Ошибка PeerJS:', err));
         }
 
-        // Начать вызов
         async function startCall() {
             const friendId = document.getElementById('friendId').value;
             if (!friendId) return alert('Введите ID собеседника');
@@ -278,7 +294,6 @@
             }
         }
 
-        // Настройка канала данных
         function setupDataChannel() {
             dataConnection.on('open', () => {
                 pingInterval = setInterval(() => {
@@ -304,7 +319,6 @@
             });
         }
 
-        // Обновление отображения пинга
         function updatePingDisplay(latency) {
             const pingElement = document.getElementById('pingDisplay');
             pingElement.textContent = latency;
@@ -318,7 +332,6 @@
             }
         }
 
-        // Принять вызов
         async function acceptCall() {
             hideElement('incomingCall');
             try {
@@ -338,21 +351,18 @@
             }
         }
 
-        // Обработка аудио
         function handleRemoteStream(remoteStream) {
             const remoteAudio = new Audio();
             remoteAudio.srcObject = remoteStream;
             remoteAudio.play();
         }
 
-        // Управление интерфейсом
         function showCallControls(nickname) {
             showElement('callControls');
             document.getElementById('connectedNickname').textContent = nickname || 'Собеседник';
             document.getElementById('connectionPanel').style.display = 'none';
         }
 
-        // Завершить вызов
         function endCall(notifyOther = false) {
             clearInterval(pingInterval);
             if (currentCall) currentCall.close();
@@ -371,7 +381,6 @@
             resetAudioAnalyser();
         }
 
-        // Управление микрофоном
         function toggleMute() {
             isMuted = !isMuted;
             localStream.getAudioTracks()[0].enabled = !isMuted;
@@ -380,17 +389,19 @@
             dataConnection.send({ type: 'muteStatus', value: isMuted });
         }
 
-        // Анализатор громкости
         function setupAudioAnalyser() {
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
             analyser = audioContext.createAnalyser();
             const source = audioContext.createMediaStreamSource(localStream);
             gainNode = audioContext.createGain();
             gainNode.gain.value = document.getElementById('volumeSlider').value / 100;
+            
+            const destination = audioContext.createMediaStreamDestination();
             source.connect(gainNode);
+            gainNode.connect(destination);
             gainNode.connect(analyser);
+            
             analyser.fftSize = 32;
-
             const dataArray = new Uint8Array(analyser.frequencyBinCount);
             
             function updateVolume() {
@@ -408,7 +419,6 @@
             document.getElementById('muteStatus').textContent = '🎤 Микрофон включен';
         }
 
-        // Получение списка микрофонов
         async function getMicrophones() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -429,7 +439,6 @@
             });
         }
 
-        // Управление усилением микрофона
         document.getElementById('volumeSlider').addEventListener('input', function(e) {
             const volume = parseInt(e.target.value);
             document.getElementById('volumeValue').textContent = volume + '%';
@@ -438,7 +447,6 @@
             }
         });
 
-        // Вспомогательные функции
         function showElement(id) {
             document.getElementById(id).style.display = 'block';
         }
@@ -447,12 +455,10 @@
             document.getElementById(id).style.display = 'none';
         }
 
-        // Обработка ника
         document.getElementById('nickname').addEventListener('input', function(e) {
             myNickname = e.target.value || 'Аноним';
         });
 
-        // Смайлики на фоне
         const smileyContainer = document.getElementById('smileyContainer');
         const smileys = ['😀', '😎', '🤖', '👻', '💩', '👽', '🤡', '🐱', '🐶', '🦄'];
 
@@ -494,7 +500,6 @@
             }
         }
 
-        // Инициализация
         window.onload = async () => {
             initializePeer();
             await getMicrophones();
