@@ -1,42 +1,134 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>P2P Voice Chat</title>
+    <title>P2P Голосовой Чат</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; }
-        #myId { padding: 5px; margin-bottom: 10px; width: 200px; }
-        .container { margin: 20px 0; padding: 10px; border: 1px solid #ccc; }
-        .call-controls { display: none; margin-top: 10px; }
-        .volume-bar { width: 100px; height: 20px; background: #ddd; margin: 10px 0; }
-        .volume-fill { height: 100%; background: #4CAF50; width: 0%; }
-        button { padding: 8px 15px; margin: 5px; cursor: pointer; }
-        .notification { background: #f0f0f0; padding: 10px; margin: 10px 0; }
+        body {
+            font-family: 'Arial', sans-serif;
+            background: #f0f2f5;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 500px;
+        }
+
+        .status-box {
+            background: #e8f4ff;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        input, button {
+            padding: 10px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        .call-controls {
+            margin-top: 20px;
+            display: none;
+        }
+
+        .volume-container {
+            display: flex;
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .volume-bar {
+            width: 100px;
+            height: 20px;
+            background: #eee;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .volume-fill {
+            height: 100%;
+            background: #28a745;
+            width: 0%;
+            transition: width 0.1s;
+        }
+
+        .notification {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+            display: none;
+        }
+
+        .user-status {
+            margin: 10px 0;
+            color: #666;
+        }
     </style>
 </head>
 <body>
-    <div>
-        <input type="text" id="nickname" placeholder="Your nickname">
-        <div>Your ID: <span id="myId"></span></div>
-    </div>
-
     <div class="container">
-        <input type="text" id="friendId" placeholder="Friend's ID">
-        <button onclick="startCall()">Connect</button>
-    </div>
-
-    <div id="incomingCall" class="notification" style="display: none;">
-        Incoming call from: <span id="callerNickname"></span>
-        <button onclick="acceptCall()">Accept</button>
-        <button onclick="rejectCall()">Reject</button>
-    </div>
-
-    <div class="call-controls" id="callControls">
-        <div>Connected with: <span id="connectedNickname"></span></div>
-        <div class="volume-bar">
-            <div class="volume-fill" id="volume"></div>
+        <div class="status-box">
+            <input type="text" id="nickname" placeholder="Ваш никнейм">
+            <div class="user-status">Ваш ID: <strong id="myId"></strong></div>
         </div>
-        <button id="muteButton" onclick="toggleMute()">Mute</button>
-        <button onclick="endCall()">End Call</button>
+
+        <div>
+            <input type="text" id="friendId" placeholder="ID собеседника">
+            <button onclick="startCall()">Позвонить</button>
+        </div>
+
+        <div class="notification" id="incomingCall">
+            <div>Входящий вызов от: <strong id="callerNickname"></strong></div>
+            <button onclick="acceptCall()">Принять</button>
+            <button onclick="rejectCall()">Отклонить</button>
+        </div>
+
+        <div class="call-controls" id="callControls">
+            <div class="user-status">Соединено с: <strong id="connectedNickname"></strong></div>
+            
+            <div class="volume-container">
+                <div>
+                    <div>Ваш микрофон:</div>
+                    <div class="volume-bar">
+                        <div class="volume-fill" id="localVolume"></div>
+                    </div>
+                </div>
+                <div>
+                    <div>Собеседник:</div>
+                    <div class="volume-bar">
+                        <div class="volume-fill" id="remoteVolume"></div>
+                    </div>
+                </div>
+            </div>
+
+            <button id="muteButton" onclick="toggleMute()">Выключить микрофон</button>
+            <button onclick="endCall()" style="background: #dc3545;">Завершить вызов</button>
+        </div>
     </div>
 
     <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
@@ -44,10 +136,11 @@
         let peer;
         let currentCall;
         let localStream;
+        let dataConnection;
         let isMuted = false;
         let audioContext;
         let analyser;
-        let myNickname = 'User';
+        let myNickname = 'Аноним';
 
         // Инициализация Peer
         function initializePeer() {
@@ -65,93 +158,109 @@
             peer.on('call', async incomingCall => {
                 const callerNickname = incomingCall.metadata.nickname;
                 document.getElementById('callerNickname').textContent = callerNickname;
-                document.getElementById('incomingCall').style.display = 'block';
+                showElement('incomingCall');
                 currentCall = incomingCall;
+                
+                // Создаем канал данных
+                dataConnection = peer.connect(incomingCall.peer, {
+                    metadata: { nickname: myNickname }
+                });
+                setupDataChannel();
             });
 
-            // Обработка отключения
-            peer.on('disconnected', () => {
-                endCall();
-                alert('Connection lost');
-            });
+            peer.on('error', err => console.error('Ошибка PeerJS:', err));
         }
 
-        // Начать звонок
+        // Начать вызов
         async function startCall() {
             const friendId = document.getElementById('friendId').value;
-            if (!friendId) return alert('Enter friend ID');
+            if (!friendId) return alert('Введите ID собеседника');
             
             try {
                 localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                setupVolumeMeter();
+                setupAudioAnalyser();
                 
                 currentCall = peer.call(friendId, localStream, {
                     metadata: { nickname: myNickname }
                 });
                 
+                // Создаем канал данных
+                dataConnection = peer.connect(friendId, {
+                    metadata: { nickname: myNickname }
+                });
+                setupDataChannel();
+
                 currentCall.on('stream', remoteStream => handleRemoteStream(remoteStream));
                 currentCall.on('close', endCall);
                 
                 showCallControls();
             } catch (err) {
-                console.error('Error starting call:', err);
+                console.error('Ошибка при звонке:', err);
             }
         }
 
-        // Принять звонок
+        // Обработка канала данных
+        function setupDataChannel() {
+            dataConnection.on('open', () => {
+                dataConnection.on('data', data => {
+                    if (data.type === 'volume') {
+                        document.getElementById('remoteVolume').style.width = data.value + '%';
+                    }
+                    if (data.type === 'muteStatus') {
+                        document.getElementById('muteButton').textContent = 
+                            data.value ? 'Микрофон выключен' : 'Выключить микрофон';
+                    }
+                });
+            });
+        }
+
+        // Принять вызов
         async function acceptCall() {
-            document.getElementById('incomingCall').style.display = 'none';
+            hideElement('incomingCall');
             try {
                 localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                setupVolumeMeter();
+                setupAudioAnalyser();
                 currentCall.answer(localStream);
                 
                 currentCall.on('stream', remoteStream => handleRemoteStream(remoteStream));
                 showCallControls(currentCall.metadata.nickname);
             } catch (err) {
-                console.error('Error accepting call:', err);
+                console.error('Ошибка при принятии вызова:', err);
             }
         }
 
-        // Обработка удаленного аудио
+        // Обработка аудио собеседника
         function handleRemoteStream(remoteStream) {
             const remoteAudio = new Audio();
             remoteAudio.srcObject = remoteStream;
             remoteAudio.play();
         }
 
-        // Показать элементы управления звонком
+        // Управление интерфейсом
         function showCallControls(nickname) {
-            document.getElementById('callControls').style.display = 'block';
+            showElement('callControls');
             document.getElementById('connectedNickname').textContent = nickname || currentCall.metadata.nickname;
         }
 
-        // Завершить звонок
+        // Завершить вызов
         function endCall() {
             if (currentCall) currentCall.close();
-            if (localStream) {
-                localStream.getTracks().forEach(track => track.stop());
-            }
-            document.getElementById('callControls').style.display = 'none';
-            document.getElementById('incomingCall').style.display = 'none';
-            resetVolumeMeter();
-        }
-
-        // Отклонить звонок
-        function rejectCall() {
-            endCall();
-            document.getElementById('incomingCall').style.display = 'none';
+            if (localStream) localStream.getTracks().forEach(track => track.stop());
+            hideElement('callControls');
+            hideElement('incomingCall');
+            resetAudioAnalyser();
         }
 
         // Управление микрофоном
         function toggleMute() {
             isMuted = !isMuted;
             localStream.getAudioTracks()[0].enabled = !isMuted;
-            document.getElementById('muteButton').textContent = isMuted ? 'Unmute' : 'Mute';
+            document.getElementById('muteButton').textContent = isMuted ? 'Включить микрофон' : 'Выключить микрофон';
+            dataConnection.send({ type: 'muteStatus', value: isMuted });
         }
 
-        // Индикатор громкости
-        function setupVolumeMeter() {
+        // Анализатор громкости
+        function setupAudioAnalyser() {
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
             analyser = audioContext.createAnalyser();
             const source = audioContext.createMediaStreamSource(localStream);
@@ -162,24 +271,35 @@
             
             function updateVolume() {
                 analyser.getByteFrequencyData(dataArray);
-                const volume = Math.max(...dataArray);
-                document.getElementById('volume').style.width = volume + '%';
+                const volume = Math.max(...dataArray) / 2;
+                document.getElementById('localVolume').style.width = volume + '%';
+                dataConnection.send({ type: 'volume', value: volume });
                 requestAnimationFrame(updateVolume);
             }
             updateVolume();
         }
 
-        function resetVolumeMeter() {
+        function resetAudioAnalyser() {
             if (audioContext) audioContext.close();
-            document.getElementById('volume').style.width = '0%';
+            document.getElementById('localVolume').style.width = '0%';
+            document.getElementById('remoteVolume').style.width = '0%';
+        }
+
+        // Вспомогательные функции
+        function showElement(id) {
+            document.getElementById(id).style.display = 'block';
+        }
+
+        function hideElement(id) {
+            document.getElementById(id).style.display = 'none';
         }
 
         // Обработка ника
         document.getElementById('nickname').addEventListener('input', function(e) {
-            myNickname = e.target.value || 'User';
+            myNickname = e.target.value || 'Аноним';
         });
 
-        // Инициализация при загрузке
+        // Инициализация
         window.onload = initializePeer;
     </script>
 </body>
