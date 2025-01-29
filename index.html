@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>P2P Voice Chat</title>
+    <style>
+        #userId { position: absolute; top: 10px; right: 10px; }
+        .container { padding: 20px; }
+        .hidden { display: none; }
+        .indicator { width: 20px; height: 20px; border-radius: 50%; }
+        .speaking { background: green; }
+        .muted { background: red; }
+    </style>
+</head>
+<body>
+    <div id="userId">Your ID: <span id="myId"></span></div>
+    
+    <div class="container" id="connectScreen">
+        <input type="text" id="peerId" placeholder="Enter friend's ID">
+        <button onclick="connect()">Connect</button>
+    </div>
+
+    <div class="container hidden" id="chatScreen">
+        <div class="indicator" id="myIndicator"></div>
+        <div class="indicator" id="peerIndicator"></div>
+        <br>
+        <button id="muteBtn" onclick="toggleMute()">Mute</button>
+        <input type="range" id="volume" min="0" max="1" step="0.1" onchange="setVolume(this.value)">
+        <button onclick="hangUp()">Disconnect</button>
+    </div>
+
+    <script>
+        let localStream;
+        let peerConnection;
+        let isMuted = false;
+        const myId = Math.random().toString(36).substr(2, 9);
+        document.getElementById('myId').textContent = myId;
+
+        // Симуляция сигнального сервера (в реальности нужен WebSocket)
+        const fakeSignaling = {
+            sendOffer: async (to, offer) => {
+                if(confirm(`User ${to} wants to connect. Accept?`)) {
+                    const answer = await createAnswer(offer);
+                    fakeSignaling.sendAnswer(myId, answer);
+                }
+            },
+            sendAnswer: (to, answer) => {
+                peerConnection.setRemoteDescription(answer);
+            }
+        };
+
+        async function connect() {
+            const peerId = document.getElementById('peerId').value;
+            
+            // Запрос доступа к микрофону
+            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            
+            // Создание PeerConnection
+            peerConnection = new RTCPeerConnection();
+            localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+            
+            // Обработчики событий
+            peerConnection.ontrack = ({ streams: [remoteStream] }) => {
+                const remoteAudio = new Audio();
+                remoteAudio.srcObject = remoteStream;
+                remoteAudio.play();
+                
+                // Анализ громкости
+                setInterval(() => analyzeVolume(remoteAudio, 'peerIndicator'), 100);
+            };
+
+            // Создание офера
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            
+            // "Отправка" офера (симуляция)
+            fakeSignaling.sendOffer(peerId, offer);
+            
+            // Переключение экранов
+            document.getElementById('connectScreen').classList.add('hidden');
+            document.getElementById('chatScreen').classList.remove('hidden');
+            
+            // Анализ своей громкости
+            const localAudio = new Audio();
+            localAudio.srcObject = localStream;
+            setInterval(() => analyzeVolume(localAudio, 'myIndicator'), 100);
+        }
+
+        async function createAnswer(offer) {
+            const peerConnection = new RTCPeerConnection();
+            await peerConnection.setRemoteDescription(offer);
+            
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            
+            return answer;
+        }
+
+        function toggleMute() {
+            isMuted = !isMuted;
+            localStream.getAudioTracks().forEach(track => track.enabled = !isMuted);
+            document.getElementById('muteBtn').textContent = isMuted ? 'Unmute' : 'Mute';
+        }
+
+        function setVolume(volume) {
+            document.querySelector('audio').volume = volume;
+        }
+
+        function analyzeVolume(audio, indicatorId) {
+            const analyser = new AudioAnalyser(audio);
+            const volume = analyser.getVolume();
+            document.getElementById(indicatorId).style.backgroundColor = volume > 0.1 ? 'green' : 'red';
+        }
+
+        function hangUp() {
+            peerConnection.close();
+            window.location.reload();
+        }
+
+        // Вспомогательный класс для анализа звука
+        class AudioAnalyser {
+            constructor(audio) {
+                const context = new AudioContext();
+                const source = context.createMediaStreamSource(audio.srcObject);
+                const analyser = context.createAnalyser();
+                
+                source.connect(analyser);
+                analyser.fftSize = 32;
+                
+                this.data = new Uint8Array(analyser.frequencyBinCount);
+                this.analyser = analyser;
+            }
+
+            getVolume() {
+                this.analyser.getByteFrequencyData(this.data);
+                return Math.max(...this.data) / 255;
+            }
+        }
+    </script>
+</body>
+</html>
