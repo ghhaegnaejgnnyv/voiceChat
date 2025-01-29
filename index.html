@@ -12,6 +12,7 @@
             display: flex;
             justify-content: center;
             min-height: 100vh;
+            overflow: hidden;
         }
 
         .container {
@@ -23,6 +24,8 @@
             width: 100%;
             max-width: 500px;
             transition: 0.3s;
+            position: relative;
+            z-index: 1;
         }
 
         .header {
@@ -71,7 +74,7 @@
 
         .volume-container {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr;
             gap: 20px;
             margin: 20px 0;
         }
@@ -129,6 +132,26 @@
             width: 100%;
             margin: 10px 0;
         }
+
+        /* Контейнер для смайликов */
+        #smileyContainer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .smiley {
+            position: absolute;
+            font-size: 24px;
+            user-select: none;
+            pointer-events: none;
+            opacity: 0.7;
+            transition: transform 0.2s, opacity 0.2s;
+        }
     </style>
 </head>
 <body>
@@ -169,13 +192,6 @@
                     </div>
                     <div id="muteStatus">🎤 Микрофон включен</div>
                 </div>
-                <div class="volume-box">
-                    <div>Собеседник</div>
-                    <div class="volume-bar">
-                        <div class="volume-fill" id="remoteVolume"></div>
-                    </div>
-                    <div id="remoteMuteStatus">🎤 Микрофон включен</div>
-                </div>
             </div>
 
             <div style="display: flex; gap:10px;">
@@ -184,6 +200,9 @@
             </div>
         </div>
     </div>
+
+    <!-- Контейнер для смайликов -->
+    <div id="smileyContainer"></div>
 
     <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
     <script>
@@ -262,7 +281,6 @@
         // Настройка канала данных
         function setupDataChannel() {
             dataConnection.on('open', () => {
-                // Запускаем отправку ping-запросов каждую секунду
                 pingInterval = setInterval(() => {
                     dataConnection.send({ type: 'ping', time: Date.now() });
                 }, 1000);
@@ -274,9 +292,6 @@
                     if (data.type === 'pong') {
                         const latency = Date.now() - data.time;
                         updatePingDisplay(latency);
-                    }
-                    if (data.type === 'volume') {
-                        document.getElementById('remoteVolume').style.width = data.value + '%';
                     }
                     if (data.type === 'muteStatus') {
                         document.getElementById('remoteMuteStatus').textContent = 
@@ -371,6 +386,7 @@
             analyser = audioContext.createAnalyser();
             const source = audioContext.createMediaStreamSource(localStream);
             gainNode = audioContext.createGain();
+            gainNode.gain.value = document.getElementById('volumeSlider').value / 100;
             source.connect(gainNode);
             gainNode.connect(analyser);
             analyser.fftSize = 32;
@@ -381,9 +397,6 @@
                 analyser.getByteFrequencyData(dataArray);
                 const volume = Math.max(...dataArray)/2;
                 document.getElementById('localVolume').style.width = volume + '%';
-                if(dataConnection && dataConnection.open) {
-                    dataConnection.send({ type: 'volume', value: volume });
-                }
                 requestAnimationFrame(updateVolume);
             }
             updateVolume();
@@ -392,15 +405,12 @@
         function resetAudioAnalyser() {
             if (audioContext) audioContext.close();
             document.getElementById('localVolume').style.width = '0%';
-            document.getElementById('remoteVolume').style.width = '0%';
             document.getElementById('muteStatus').textContent = '🎤 Микрофон включен';
-            document.getElementById('remoteMuteStatus').textContent = '🎤 Микрофон включен';
         }
 
         // Получение списка микрофонов
         async function getMicrophones() {
             try {
-                // Запрашиваем доступ к микрофону для получения названий
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 stream.getTracks().forEach(track => track.stop());
             } catch (err) {
@@ -442,10 +452,53 @@
             myNickname = e.target.value || 'Аноним';
         });
 
+        // Смайлики на фоне
+        const smileyContainer = document.getElementById('smileyContainer');
+        const smileys = ['😀', '😎', '🤖', '👻', '💩', '👽', '🤡', '🐱', '🐶', '🦄'];
+
+        function createSmiley() {
+            const smiley = document.createElement('div');
+            smiley.className = 'smiley';
+            smiley.textContent = smileys[Math.floor(Math.random() * smileys.length)];
+            smiley.style.left = `${Math.random() * 100}vw`;
+            smiley.style.top = `${Math.random() * 100}vh`;
+            smiley.style.transform = `scale(${Math.random() * 0.5 + 0.5})`;
+            smileyContainer.appendChild(smiley);
+            animateSmiley(smiley);
+        }
+
+        function animateSmiley(smiley) {
+            let x = parseFloat(smiley.style.left);
+            let y = parseFloat(smiley.style.top);
+            let dx = (Math.random() - 0.5) * 2;
+            let dy = (Math.random() - 0.5) * 2;
+
+            function move() {
+                x += dx;
+                y += dy;
+
+                if (x < 0 || x > window.innerWidth) dx *= -1;
+                if (y < 0 || y > window.innerHeight) dy *= -1;
+
+                smiley.style.left = `${x}px`;
+                smiley.style.top = `${y}px`;
+
+                requestAnimationFrame(move);
+            }
+            move();
+        }
+
+        function generateSmileys() {
+            for (let i = 0; i < 20; i++) {
+                createSmiley();
+            }
+        }
+
         // Инициализация
         window.onload = async () => {
             initializePeer();
             await getMicrophones();
+            generateSmileys();
         };
     </script>
 </body>
