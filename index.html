@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>P52P Голосовой Чат</title>
+    <title>P2P Голосовой Чат</title>
     <style>
         body {
             font-family: 'Arial', sans-serif;
@@ -30,7 +30,7 @@
             margin-bottom: 20px;
         }
 
-        input, button {
+        input, button, select {
             padding: 10px;
             margin: 5px 0;
             border: 1px solid #ddd;
@@ -103,6 +103,11 @@
         .active-call {
             background: #f8fff0;
         }
+
+        .ping-status {
+            margin-top: 5px;
+            font-size: 0.9em;
+        }
     </style>
 </head>
 <body>
@@ -110,6 +115,7 @@
         <div class="status-box">
             <input type="text" id="nickname" placeholder="Ваш никнейм">
             <div class="user-status">Ваш ID: <strong id="myId">...</strong></div>
+            <select id="microphoneSelect"></select>
         </div>
 
         <div id="connectionPanel">
@@ -126,7 +132,10 @@
         </div>
 
         <div class="call-controls" id="callControls">
-            <div class="user-status">✅ Соединение установлено с: <strong id="connectedNickname"></strong></div>
+            <div class="user-status">
+                ✅ Соединение установлено с: <strong id="connectedNickname"></strong>
+                <div class="ping-status">Пинг: <span id="pingDisplay">0</span>мс</div>
+            </div>
             
             <div class="volume-container">
                 <div class="volume-box">
@@ -162,6 +171,7 @@
         let audioContext;
         let analyser;
         let myNickname = 'Аноним';
+        let pingInterval;
 
         // Инициализация Peer
         function initializePeer() {
@@ -199,7 +209,10 @@
             
             try {
                 document.getElementById('mainContainer').classList.add('active-call');
-                localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const selectedDeviceId = document.getElementById('microphoneSelect').value;
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: { deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined }
+                });
                 setupAudioAnalyser();
                 
                 currentCall = peer.call(friendId, localStream, {
@@ -212,7 +225,7 @@
                 setupDataChannel();
 
                 currentCall.on('stream', remoteStream => handleRemoteStream(remoteStream));
-                currentCall.on('close', endCall);
+                currentCall.on('close', () => endCall(true));
                 
                 showCallControls();
             } catch (err) {
@@ -224,7 +237,19 @@
         // Настройка канала данных
         function setupDataChannel() {
             dataConnection.on('open', () => {
+                // Запускаем отправку ping-запросов каждую секунду
+                pingInterval = setInterval(() => {
+                    dataConnection.send({ type: 'ping', time: Date.now() });
+                }, 1000);
+
                 dataConnection.on('data', data => {
+                    if (data.type === 'ping') {
+                        dataConnection.send({ type: 'pong', time: data.time });
+                    }
+                    if (data.type === 'pong') {
+                        const latency = Date.now() - data.time;
+                        updatePingDisplay(latency);
+                    }
                     if (data.type === 'volume') {
                         document.getElementById('remoteVolume').style.width = data.value + '%';
                     }
@@ -232,19 +257,40 @@
                         document.getElementById('remoteMuteStatus').textContent = 
                             data.value ? '🔇 Микрофон выключен' : '🎤 Микрофон включен';
                     }
+                    if (data.type === 'endCall') {
+                        endCall(true);
+                    }
                 });
             });
+        }
+
+        // Обновление отображения пинга
+        function updatePingDisplay(latency) {
+            const pingElement = document.getElementById('pingDisplay');
+            pingElement.textContent = latency;
+            
+            if (latency <= 109) {
+                pingElement.style.color = '#28a745';
+            } else if (latency <= 250) {
+                pingElement.style.color = '#ffc107';
+            } else {
+                pingElement.style.color = '#dc3545';
+            }
         }
 
         // Принять вызов
         async function acceptCall() {
             hideElement('incomingCall');
             try {
-                localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const selectedDeviceId = document.getElementById('microphoneSelect').value;
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: { deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined }
+                });
                 setupAudioAnalyser();
                 currentCall.answer(localStream);
                 
                 currentCall.on('stream', remoteStream => handleRemoteStream(remoteStream));
+                currentCall.on('close', () => endCall(true));
                 showCallControls(currentCall.metadata.nickname);
             } catch (err) {
                 alert('Ошибка при принятии вызова: ' + err.message);
@@ -267,10 +313,16 @@
         }
 
         // Завершить вызов
-        function endCall() {
+        function endCall(notifyOther = false) {
+            clearInterval(pingInterval);
             if (currentCall) currentCall.close();
             if (localStream) localStream.getTracks().forEach(track => track.stop());
-            if (dataConnection) dataConnection.close();
+            if (dataConnection) {
+                if (notifyOther) {
+                    dataConnection.send({ type: 'endCall' });
+                }
+                dataConnection.close();
+            }
             
             hideElement('callControls');
             hideElement('incomingCall');
@@ -318,6 +370,28 @@
             document.getElementById('remoteMuteStatus').textContent = '🎤 Микрофон включен';
         }
 
+        // Получение списка микрофонов
+        async function getMicrophones() {
+            try {
+                // Запрашиваем доступ к микрофону для получения названий
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                stream.getTracks().forEach(track => track.stop());
+            } catch (err) {
+                console.error('Не удалось получить доступ к микрофону:', err);
+            }
+
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const microphones = devices.filter(device => device.kind === 'audioinput');
+            const select = document.getElementById('microphoneSelect');
+            select.innerHTML = '<option value="">По умолчанию</option>';
+            microphones.forEach(mic => {
+                const option = document.createElement('option');
+                option.value = mic.deviceId;
+                option.text = mic.label || `Микрофон ${select.options.length}`;
+                select.appendChild(option);
+            });
+        }
+
         // Вспомогательные функции
         function showElement(id) {
             document.getElementById(id).style.display = 'block';
@@ -333,7 +407,10 @@
         });
 
         // Инициализация
-        window.onload = initializePeer;
+        window.onload = async () => {
+            initializePeer();
+            await getMicrophones();
+        };
     </script>
 </body>
 </html>
