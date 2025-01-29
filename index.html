@@ -1,11 +1,12 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>P2P Голосовой Чат</title>
+    <title>Анонимный Войсчат</title>
     <style>
         body {
-            font-family: 'Arial', sans-serif;
-            background: #f0f2f5;
+            font-family: 'Courier New', monospace;
+            background: #000;
+            color: #0f0;
             margin: 0;
             padding: 20px;
             display: flex;
@@ -14,41 +15,53 @@
         }
 
         .container {
-            background: white;
+            background: #111;
             padding: 25px;
             border-radius: 15px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border: 1px solid #0f0;
+            box-shadow: 0 0 10px #0f0;
             width: 100%;
             max-width: 500px;
             transition: 0.3s;
         }
 
+        .header {
+            text-align: center;
+            font-size: 2em;
+            margin-bottom: 20px;
+            text-shadow: 0 0 5px #0f0;
+        }
+
         .status-box {
-            background: #e8f4ff;
+            background: #222;
             padding: 15px;
             border-radius: 10px;
             margin-bottom: 20px;
+            border: 1px solid #0f0;
         }
 
         input, button, select {
             padding: 10px;
             margin: 5px 0;
-            border: 1px solid #ddd;
+            border: 1px solid #0f0;
             border-radius: 8px;
             width: 100%;
             box-sizing: border-box;
+            background: #111;
+            color: #0f0;
+            font-family: 'Courier New', monospace;
         }
 
         button {
-            background: #007bff;
-            color: white;
+            background: #0f0;
+            color: #000;
             border: none;
             cursor: pointer;
             transition: 0.3s;
         }
 
         button:hover {
-            opacity: 0.9;
+            background: #0c0;
         }
 
         .call-controls {
@@ -64,58 +77,69 @@
         }
 
         .volume-box {
-            background: #f8f9fa;
+            background: #222;
             padding: 15px;
             border-radius: 10px;
             text-align: center;
+            border: 1px solid #0f0;
         }
 
         .volume-bar {
             width: 100%;
             height: 20px;
-            background: #eee;
+            background: #111;
             border-radius: 10px;
             overflow: hidden;
             margin: 10px 0;
+            border: 1px solid #0f0;
         }
 
         .volume-fill {
             height: 100%;
-            background: #28a745;
+            background: #0f0;
             width: 0%;
             transition: width 0.1s;
         }
 
         .notification {
-            background: #fff3cd;
+            background: #222;
             padding: 15px;
             border-radius: 10px;
             margin: 15px 0;
             display: none;
+            border: 1px solid #0f0;
         }
 
         .user-status {
             margin: 10px 0;
-            color: #666;
+            color: #0f0;
             text-align: center;
         }
 
         .active-call {
-            background: #f8fff0;
+            background: #1a1a1a;
         }
 
         .ping-status {
             margin-top: 5px;
             font-size: 0.9em;
         }
+
+        .volume-slider {
+            width: 100%;
+            margin: 10px 0;
+        }
     </style>
 </head>
 <body>
     <div class="container" id="mainContainer">
+        <div class="header">Анонимный Войсчат</div>
         <div class="status-box">
             <input type="text" id="nickname" placeholder="Ваш никнейм">
             <div class="user-status">Ваш ID: <strong id="myId">...</strong></div>
             <select id="microphoneSelect"></select>
+            <input type="range" id="volumeSlider" class="volume-slider" min="0" max="1000" value="100">
+            <div class="user-status">Усиление микрофона: <span id="volumeValue">100%</span></div>
         </div>
 
         <div id="connectionPanel">
@@ -127,7 +151,7 @@
             <div>📞 Входящий вызов от: <strong id="callerNickname"></strong></div>
             <div style="margin-top:10px;">
                 <button onclick="acceptCall()">Принять</button>
-                <button onclick="rejectCall()" style="background:#dc3545;">Отклонить</button>
+                <button onclick="rejectCall()" style="background:#f00; color:#000;">Отклонить</button>
             </div>
         </div>
 
@@ -156,7 +180,7 @@
 
             <div style="display: flex; gap:10px;">
                 <button id="muteButton" onclick="toggleMute()">🔇 Выключить</button>
-                <button onclick="endCall()" style="background: #dc3545;">📞 Завершить</button>
+                <button onclick="endCall()" style="background: #f00; color:#000;">📞 Завершить</button>
             </div>
         </div>
     </div>
@@ -172,6 +196,7 @@
         let analyser;
         let myNickname = 'Аноним';
         let pingInterval;
+        let gainNode;
 
         // Инициализация Peer
         function initializePeer() {
@@ -270,11 +295,11 @@
             pingElement.textContent = latency;
             
             if (latency <= 109) {
-                pingElement.style.color = '#28a745';
+                pingElement.style.color = '#0f0';
             } else if (latency <= 250) {
-                pingElement.style.color = '#ffc107';
+                pingElement.style.color = '#ff0';
             } else {
-                pingElement.style.color = '#dc3545';
+                pingElement.style.color = '#f00';
             }
         }
 
@@ -345,7 +370,9 @@
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
             analyser = audioContext.createAnalyser();
             const source = audioContext.createMediaStreamSource(localStream);
-            source.connect(analyser);
+            gainNode = audioContext.createGain();
+            source.connect(gainNode);
+            gainNode.connect(analyser);
             analyser.fftSize = 32;
 
             const dataArray = new Uint8Array(analyser.frequencyBinCount);
@@ -391,6 +418,15 @@
                 select.appendChild(option);
             });
         }
+
+        // Управление усилением микрофона
+        document.getElementById('volumeSlider').addEventListener('input', function(e) {
+            const volume = parseInt(e.target.value);
+            document.getElementById('volumeValue').textContent = volume + '%';
+            if (gainNode) {
+                gainNode.gain.value = volume / 100;
+            }
+        });
 
         // Вспомогательные функции
         function showElement(id) {
